@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>中国地级市数据可视化</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    :root {
+      --ink: #17202a;
+      --muted: #667085;
+      --line: #d7dde5;
+      --panel: rgba(255, 255, 255, 0.94);
+      --accent: #2563eb;
+      --empty: #eeeeee;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+      background: #f4f6f8;
+      overflow: hidden;
+    }
+
+    #map {
+      width: 100vw;
+      height: 100vh;
+      background: #e8eef5;
+    }
+
+    .topbar {
+      position: absolute;
+      z-index: 900;
+      top: 14px;
+      left: 14px;
+      right: 14px;
+      min-height: 56px;
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) minmax(260px, 420px) minmax(220px, 360px) auto;
+      gap: 10px;
+      align-items: center;
+      padding: 10px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+      backdrop-filter: blur(10px);
+    }
+
+    .brand {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .brand-title {
+      font-size: 16px;
+      font-weight: 700;
+      line-height: 1.25;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .brand-meta {
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .metric-tabs {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      max-width: 52vw;
+      overflow-x: auto;
+      scrollbar-width: thin;
+    }
+
+    .search-group {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .search-row {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 6px;
+    }
+
+    .control-input,
+    .control-select {
+      width: 100%;
+      height: 34px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: #253247;
+      padding: 0 10px;
+      font-size: 13px;
+      outline: none;
+    }
+
+    .control-input:focus,
+    .control-select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.14);
+    }
+
+    .metric-button {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: #253247;
+      height: 34px;
+      padding: 0 12px;
+      font-size: 13px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .metric-button.active {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: #fff;
+      font-weight: 700;
+    }
+
+    .year-control {
+      display: grid;
+      grid-template-columns: 48px 150px;
+      gap: 8px;
+      align-items: center;
+      min-width: 206px;
+    }
+
+    .year-value {
+      font-size: 16px;
+      font-weight: 700;
+      text-align: right;
+    }
+
+    input[type="range"] {
+      width: 150px;
+      accent-color: var(--accent);
+    }
+
+    .side-panel {
+      position: absolute;
+      z-index: 850;
+      top: 88px;
+      right: 14px;
+      width: min(320px, calc(100vw - 28px));
+      max-height: calc(100vh - 160px);
+      overflow: auto;
+      padding: 14px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+      backdrop-filter: blur(10px);
+    }
+
+    .panel-title {
+      margin: 0 0 4px;
+      font-size: 18px;
+      line-height: 1.3;
+    }
+
+    .panel-subtitle {
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .stat-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      padding: 8px 0;
+      border-top: 1px solid #edf0f4;
+      font-size: 13px;
+    }
+
+    .stat-label { color: var(--muted); }
+    .stat-value { font-weight: 700; text-align: right; }
+
+    .legend {
+      position: absolute;
+      z-index: 850;
+      left: 14px;
+      bottom: 34px;
+      width: min(360px, calc(100vw - 28px));
+      padding: 12px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+      backdrop-filter: blur(10px);
+      font-size: 12px;
+    }
+
+    .legend-title {
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .legend-swatches {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      height: 12px;
+      border: 1px solid #c9d0da;
+      margin-bottom: 6px;
+    }
+
+    .legend-labels {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--muted);
+    }
+
+    .empty-key {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+      color: var(--muted);
+    }
+
+    .empty-swatch {
+      width: 14px;
+      height: 10px;
+      background: var(--empty);
+      border: 1px solid #d5d5d5;
+    }
+
+    .map-credit {
+      position: absolute;
+      z-index: 850;
+      right: 14px;
+      bottom: 14px;
+      color: #4b5563;
+      background: rgba(255, 255, 255, 0.86);
+      border: 1px solid var(--line);
+      padding: 5px 8px;
+      font-size: 12px;
+    }
+
+    .leaflet-container {
+      font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+    }
+
+    @media (max-width: 760px) {
+      .topbar {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+      }
+
+      .metric-tabs {
+        max-width: none;
+      }
+
+      .year-control {
+        grid-template-columns: 48px 1fr;
+      }
+
+      input[type="range"] {
+        width: 100%;
+      }
+
+      .side-panel {
+        top: auto;
+        left: 14px;
+        right: 14px;
+        bottom: 126px;
+        width: auto;
+        max-height: 28vh;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-title">中国地级市数据可视化</div>
+      <div class="brand-meta" id="datasetMeta">加载中</div>
+    </div>
+    <div class="search-group">
+      <input class="control-input" id="metricSearch" type="search" placeholder="搜索变量">
+      <select class="control-select" id="metricSelect" aria-label="选择变量"></select>
+    </div>
+    <div class="search-group">
+      <input class="control-input" id="citySearch" type="search" placeholder="搜索城市">
+      <div class="metric-tabs" id="metricTabs"></div>
+    </div>
+    <div class="year-control">
+      <div class="year-value" id="yearValue">2024</div>
+      <input id="yearRange" type="range" min="2004" max="2024" step="1" value="2024">
+    </div>
+  </div>
+
+  <aside class="side-panel" id="detailPanel">
+    <h2 class="panel-title">中国地级市</h2>
+    <p class="panel-subtitle">2024 · 地区生产总值</p>
+    <div id="detailStats"></div>
+  </aside>
+
+  <div class="legend" id="legend"></div>
+  <div class="map-credit">底图源自天地图，审图号 GS（2024）0650号</div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/chroma-js@2.4.2/chroma.min.js"></script>
+  <script>
+    const DATA_URL = 'data/完整版地级市.geojson';
+    const TDT_KEY = '534ac32c5b2881ad1fc17c3781078c9b';
+    const EMPTY_COLOR = '#eeeeee';
+    const COLOR_SCALE = ['#1f5aa6', '#5aa1d8', '#f2d06b', '#e98b39', '#b33f2f'];
+    const SHORT_LABELS = {
+      gdp_wanyuan: '地区生产总值',
+      population_from_gdp_percap_ren: '人口数',
+      administrative_land_area_km2: '行政土地面积',
+      gdp_growth_rate_percent: 'GDP增长率',
+      industrial_enterprises_above_scale_count: '规上工业企业'
+    };
+
+    const map = L.map('map', {
+      center: [35.6, 104.2],
+      zoom: 4,
+      minZoom: 3,
+      maxZoom: 12,
+      zoomControl: false,
+      maxBounds: [[3, 73], [54, 136]],
+      maxBoundsViscosity: 0.85,
+      preferCanvas: true
+    });
+
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
+    L.tileLayer(
+      'https://t{s}.tianditu.gov.cn/vec_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=vec&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=' + TDT_KEY,
+      { subdomains: ['0', '1', '2', '3', '4', '5', '6', '7'], attribution: '', noWrap: true }
+    ).addTo(map);
+    L.tileLayer(
+      'https://t{s}.tianditu.gov.cn/cva_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=cva&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=' + TDT_KEY,
+      { subdomains: ['0', '1', '2', '3', '4', '5', '6', '7'], attribution: '', noWrap: true }
+    ).addTo(map);
+
+    let geojsonData;
+    let boundaryLayer;
+    let currentMetric = 'gdp_wanyuan';
+    let currentYear = 2024;
+    let metricMeta = {};
+    let allMetricKeys = [];
+    let defaultDetailMetrics = [];
+    let breaks = [];
+    let palette = [];
+    let selectedLayer = null;
+    let currentDetailProps = null;
+
+    const metricTabs = document.getElementById('metricTabs');
+    const metricSearch = document.getElementById('metricSearch');
+    const metricSelect = document.getElementById('metricSelect');
+    const citySearch = document.getElementById('citySearch');
+    const yearRange = document.getElementById('yearRange');
+    const yearValue = document.getElementById('yearValue');
+    const legend = document.getElementById('legend');
+    const detailPanel = document.getElementById('detailPanel');
+    const detailStats = document.getElementById('detailStats');
+    const datasetMeta = document.getElementById('datasetMeta');
+
+    function metricLabel(metric) {
+      return SHORT_LABELS[metric] || metricMeta[metric]?.label || metric;
+    }
+
+    function metricUnit(metric) {
+      return metricMeta[metric]?.unit || '';
+    }
+
+    function metricValue(properties, metric = currentMetric, year = currentYear) {
+      return properties.data?.[String(year)]?.[metric] ?? null;
+    }
+
+    function formatNumber(value) {
+      if (value === null || value === undefined || Number.isNaN(value)) return '暂无数据';
+      return Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+    }
+
+    function valuesFor(metric, year) {
+      return geojsonData.features
+        .map(feature => metricValue(feature.properties, metric, year))
+        .filter(value => value !== null && value !== undefined && Number.isFinite(Number(value)))
+        .map(Number);
+    }
+
+    function computeBreaks() {
+      const values = valuesFor(currentMetric, currentYear).sort((a, b) => a - b);
+      palette = chroma.scale(COLOR_SCALE).mode('lab').colors(5);
+      if (!values.length) {
+        breaks = [];
+        return;
+      }
+      breaks = [0, 0.2, 0.4, 0.6, 0.8, 1].map(q => chroma.limits(values, 'q', 5)[Math.round(q * 5)]).filter(v => v !== undefined);
+      breaks = chroma.limits(values, 'q', 5);
+    }
+
+    function colorFor(value) {
+      if (value === null || value === undefined || !Number.isFinite(Number(value))) return EMPTY_COLOR;
+      if (!breaks.length) return palette[0];
+      const number = Number(value);
+      for (let i = 0; i < breaks.length - 1; i += 1) {
+        if (number <= breaks[i + 1]) return palette[i] || palette[palette.length - 1];
+      }
+      return palette[palette.length - 1];
+    }
+
+    function styleFeature(feature) {
+      const value = metricValue(feature.properties);
+      return {
+        fillColor: colorFor(value),
+        fillOpacity: value === null || value === undefined ? 0.72 : 0.82,
+        color: '#ffffff',
+        weight: 0.75,
+        opacity: 0.9
+      };
+    }
+
+    function renderLegend() {
+      const label = metricLabel(currentMetric);
+      const unit = metricUnit(currentMetric);
+      const min = breaks.length ? formatNumber(breaks[0]) : '暂无';
+      const max = breaks.length ? formatNumber(breaks[breaks.length - 1]) : '暂无';
+      const rangeLabels = breaks.length
+        ? `<div class="legend-labels"><span>${min}</span><span>${max}</span></div>`
+        : '<div class="legend-labels"><span>本年暂无可用数值</span></div>';
+      legend.innerHTML = `
+        <div class="legend-title">${currentYear} · ${label}${unit ? `（${unit}）` : ''}</div>
+        <div class="legend-swatches">${palette.map(color => `<span style="background:${color}"></span>`).join('')}</div>
+        ${rangeLabels}
+        <div class="empty-key"><span class="empty-swatch"></span><span>暂无数据</span></div>
+      `;
+    }
+
+    function latestAvailable(properties, metric, beforeYear = currentYear) {
+      for (let year = beforeYear; year >= Number(yearRange.min); year -= 1) {
+        const value = metricValue(properties, metric, year);
+        if (value !== null && value !== undefined && Number.isFinite(Number(value))) {
+          return { year, value };
+        }
+      }
+      for (let year = beforeYear + 1; year <= Number(yearRange.max); year += 1) {
+        const value = metricValue(properties, metric, year);
+        if (value !== null && value !== undefined && Number.isFinite(Number(value))) {
+          return { year, value };
+        }
+      }
+      return null;
+    }
+
+    function renderDetails(properties) {
+      currentDetailProps = properties;
+      const title = properties.city_name || properties.name || '未命名地区';
+      const subtitle = `${currentYear} · ${metricLabel(currentMetric)}`;
+      const rows = defaultDetailMetrics.map(metric => {
+        const value = metricValue(properties, metric, currentYear);
+        const fallback = value === null || value === undefined ? latestAvailable(properties, metric) : null;
+        const unit = metricUnit(metric);
+        const renderedValue = value === null || value === undefined
+          ? (fallback ? `${formatNumber(fallback.value)}${unit}<br><span style="font-weight:400;color:#667085">最近：${fallback.year}</span>` : '暂无数据')
+          : `${formatNumber(value)}${unit}`;
+        return `
+          <div class="stat-row">
+            <div class="stat-label">${metricLabel(metric)}</div>
+            <div class="stat-value">${renderedValue}</div>
+          </div>
+        `;
+      }).join('');
+      detailPanel.querySelector('.panel-title').textContent = title;
+      detailPanel.querySelector('.panel-subtitle').textContent = subtitle;
+      detailStats.innerHTML = rows;
+    }
+
+    function updateMap() {
+      computeBreaks();
+      boundaryLayer.setStyle(styleFeature);
+      renderLegend();
+      if (selectedLayer) {
+        renderDetails(selectedLayer.feature.properties);
+      } else if (currentDetailProps) {
+        renderDetails(currentDetailProps);
+      }
+    }
+
+    function bindFeature(feature, layer) {
+      layer.on({
+        mouseover: event => {
+          const target = event.target;
+          target.setStyle({ weight: 2.2, color: '#111827', fillOpacity: 0.92 });
+          target.bringToFront();
+        },
+        mouseout: event => {
+          if (event.target !== selectedLayer) boundaryLayer.resetStyle(event.target);
+        },
+        click: event => {
+          if (selectedLayer && selectedLayer !== event.target) boundaryLayer.resetStyle(selectedLayer);
+          selectedLayer = event.target;
+          selectedLayer.setStyle({ weight: 2.4, color: '#111827', fillOpacity: 0.95 });
+          renderDetails(feature.properties);
+        }
+      });
+      layer.bindTooltip(feature.properties.city_name || feature.properties.name, {
+        sticky: true,
+        direction: 'top',
+        opacity: 0.92
+      });
+    }
+
+    function setMetric(metric) {
+      currentMetric = metric;
+      metricSelect.value = metric;
+      document.querySelectorAll('.metric-button').forEach(item => {
+        item.classList.toggle('active', item.dataset.metric === metric);
+      });
+      updateMap();
+    }
+
+    function renderMetricTabs() {
+      metricTabs.innerHTML = '';
+      defaultDetailMetrics.forEach(metric => {
+        const button = document.createElement('button');
+        button.className = `metric-button${metric === currentMetric ? ' active' : ''}`;
+        button.type = 'button';
+        button.dataset.metric = metric;
+        button.textContent = metricLabel(metric);
+        button.addEventListener('click', () => setMetric(metric));
+        metricTabs.appendChild(button);
+      });
+    }
+
+    function renderMetricSelect(filter = '') {
+      const normalized = filter.trim().toLowerCase();
+      const keys = allMetricKeys.filter(metric => {
+        const info = metricMeta[metric] || {};
+        const text = `${metric} ${info.label || ''} ${info.unit || ''}`.toLowerCase();
+        return !normalized || text.includes(normalized);
+      }).slice(0, 80);
+      metricSelect.innerHTML = keys.map(metric => {
+        const unit = metricUnit(metric);
+        return `<option value="${metric}">${metricLabel(metric)}${unit ? `（${unit}）` : ''}</option>`;
+      }).join('');
+      if (keys.includes(currentMetric)) {
+        metricSelect.value = currentMetric;
+      } else if (keys.length) {
+        metricSelect.value = keys[0];
+      }
+    }
+
+    function focusCity(query) {
+      const text = query.trim();
+      if (!text || !boundaryLayer) return;
+      let foundLayer = null;
+      boundaryLayer.eachLayer(layer => {
+        const name = layer.feature.properties.city_name || layer.feature.properties.name || '';
+        if (!foundLayer && name.includes(text)) foundLayer = layer;
+      });
+      if (!foundLayer) return;
+      if (selectedLayer && selectedLayer !== foundLayer) boundaryLayer.resetStyle(selectedLayer);
+      selectedLayer = foundLayer;
+      selectedLayer.setStyle({ weight: 2.4, color: '#111827', fillOpacity: 0.95 });
+      map.fitBounds(selectedLayer.getBounds(), { maxZoom: 8, padding: [28, 28] });
+      renderDetails(selectedLayer.feature.properties);
+    }
+
+    fetch(DATA_URL)
+      .then(response => {
+        if (!response.ok) throw new Error(`GeoJSON 加载失败：${response.status}`);
+        return response.json();
+      })
+      .then(data => {
+        geojsonData = data;
+        const years = data.metadata.years || [2024];
+        currentYear = years[years.length - 1];
+        metricMeta = data.metadata.metrics || {};
+        allMetricKeys = Object.keys(metricMeta).sort((a, b) => (metricMeta[a].order || 0) - (metricMeta[b].order || 0));
+        defaultDetailMetrics = data.metadata.default_detail_metrics || ['gdp_wanyuan'];
+        currentMetric = defaultDetailMetrics[0] || allMetricKeys[0];
+        yearRange.min = years[0];
+        yearRange.max = years[years.length - 1];
+        yearRange.value = currentYear;
+        yearValue.textContent = currentYear;
+        datasetMeta.textContent = `${data.features.length} 个面要素 · ${allMetricKeys.length} 个变量 · ${years[0]}-${years[years.length - 1]}`;
+        renderMetricTabs();
+        renderMetricSelect();
+        computeBreaks();
+        boundaryLayer = L.geoJSON(data, { style: styleFeature, onEachFeature: bindFeature }).addTo(map);
+        map.fitBounds(boundaryLayer.getBounds(), { padding: [24, 24] });
+        renderLegend();
+        const firstWithData = data.features.find(feature => feature.properties.has_panel_data) || data.features[0];
+        if (firstWithData) renderDetails(firstWithData.properties);
+      })
+      .catch(error => {
+        datasetMeta.textContent = error.message;
+        legend.innerHTML = '<div class="legend-title">数据加载失败</div>';
+      });
+
+    yearRange.addEventListener('input', event => {
+      currentYear = Number(event.target.value);
+      yearValue.textContent = currentYear;
+      updateMap();
+    });
+
+    metricSearch.addEventListener('input', event => renderMetricSelect(event.target.value));
+    metricSelect.addEventListener('change', event => setMetric(event.target.value));
+    citySearch.addEventListener('change', event => focusCity(event.target.value));
+    citySearch.addEventListener('keydown', event => {
+      if (event.key === 'Enter') focusCity(event.target.value);
+    });
+  </script>
+</body>
+</html>
