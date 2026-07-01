@@ -322,7 +322,8 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/chroma-js@2.4.2/chroma.min.js"></script>
   <script>
-    const DATA_URL = 'data/完整版地级市.geojson';
+    const BOUNDARY_URL = 'data/prefecture_boundaries.geojson';
+    const PANEL_URL = 'data/city_panel_compact.json';
     const EMPTY_COLOR = '#eeeeee';
     const COLOR_SCALE = ['#1f5aa6', '#5aa1d8', '#f2d06b', '#e98b39', '#b33f2f'];
     const SHORT_LABELS = {
@@ -352,6 +353,9 @@
     let currentYear = 2024;
     let metricMeta = {};
     let allMetricKeys = [];
+    let metricIndex = {};
+    let cityPanel = {};
+    let yearIndex = {};
     let defaultDetailMetrics = [];
     let breaks = [];
     let palette = [];
@@ -378,7 +382,12 @@
     }
 
     function metricValue(properties, metric = currentMetric, year = currentYear) {
-      return properties.data?.[String(year)]?.[metric] ?? null;
+      const code = properties.city_code;
+      const city = cityPanel[code];
+      const yi = yearIndex[year];
+      const mi = metricIndex[metric];
+      if (!city || yi === undefined || mi === undefined) return null;
+      return city.values?.[yi]?.[mi] ?? null;
     }
 
     function formatNumber(value) {
@@ -571,31 +580,39 @@
       renderDetails(selectedLayer.feature.properties);
     }
 
-    fetch(DATA_URL)
-      .then(response => {
-        if (!response.ok) throw new Error(`GeoJSON 加载失败：${response.status}`);
+    Promise.all([
+      fetch(BOUNDARY_URL).then(response => {
+        if (!response.ok) throw new Error(`边界数据加载失败：${response.status}`);
+        return response.json();
+      }),
+      fetch(PANEL_URL).then(response => {
+        if (!response.ok) throw new Error(`面板数据加载失败：${response.status}`);
         return response.json();
       })
-      .then(data => {
-        geojsonData = data;
-        const years = data.metadata.years || [2024];
+    ])
+      .then(([boundaryData, panelData]) => {
+        geojsonData = boundaryData;
+        const years = panelData.metadata.years || [2024];
         currentYear = years[years.length - 1];
-        metricMeta = data.metadata.metrics || {};
-        allMetricKeys = Object.keys(metricMeta).sort((a, b) => (metricMeta[a].order || 0) - (metricMeta[b].order || 0));
-        defaultDetailMetrics = data.metadata.default_detail_metrics || ['gdp_wanyuan'];
+        metricMeta = panelData.metadata.metrics || {};
+        allMetricKeys = panelData.metadata.metric_keys || Object.keys(metricMeta).sort((a, b) => (metricMeta[a].order || 0) - (metricMeta[b].order || 0));
+        metricIndex = Object.fromEntries(allMetricKeys.map((metric, index) => [metric, index]));
+        yearIndex = Object.fromEntries(years.map((year, index) => [year, index]));
+        cityPanel = panelData.cities || {};
+        defaultDetailMetrics = panelData.metadata.default_detail_metrics || ['gdp_wanyuan'];
         currentMetric = defaultDetailMetrics[0] || allMetricKeys[0];
         yearRange.min = years[0];
         yearRange.max = years[years.length - 1];
         yearRange.value = currentYear;
         yearValue.textContent = currentYear;
-        datasetMeta.textContent = `${data.features.length} 个面要素 · ${allMetricKeys.length} 个变量 · ${years[0]}-${years[years.length - 1]}`;
+        datasetMeta.textContent = `${boundaryData.features.length} 个面要素 · ${allMetricKeys.length} 个变量 · ${years[0]}-${years[years.length - 1]}`;
         renderMetricTabs();
         renderMetricSelect();
         computeBreaks();
-        boundaryLayer = L.geoJSON(data, { style: styleFeature, onEachFeature: bindFeature }).addTo(map);
+        boundaryLayer = L.geoJSON(boundaryData, { style: styleFeature, onEachFeature: bindFeature }).addTo(map);
         map.fitBounds(boundaryLayer.getBounds(), { padding: [24, 24] });
         renderLegend();
-        const firstWithData = data.features.find(feature => feature.properties.has_panel_data) || data.features[0];
+        const firstWithData = boundaryData.features.find(feature => cityPanel[feature.properties.city_code]) || boundaryData.features[0];
         if (firstWithData) renderDetails(firstWithData.properties);
       })
       .catch(error => {

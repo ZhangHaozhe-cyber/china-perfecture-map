@@ -3,7 +3,8 @@
 ## 文件
 
 - `index.html`：发布页面。
-- `data/完整版地级市.geojson`：带 2004-2024 年核心年鉴指标的地级市面 GeoJSON。
+- `data/prefecture_boundaries.geojson`：地级市边界 GeoJSON，不包含大体量面板属性。
+- `data/city_panel_compact.json`：2004-2024 年城市面板指标紧凑数据，页面按行政区划代码与边界关联。
 
 ## 数据来源
 
@@ -14,7 +15,7 @@
 
 ## 指标
 
-页面动态读取 GeoJSON `metadata.metrics`。当前发布数据包含 206 个变量，支持在页面顶部搜索并选择任意变量着色。
+页面动态读取 `city_panel_compact.json` 的 `metadata.metrics`。当前发布数据包含 206 个变量，支持在页面顶部搜索并选择任意变量着色。
 
 默认详情面板展示：
 
@@ -37,5 +38,7 @@
 Cloudflare Pages 推荐设置：
 
 - Framework preset：None
-- Build command：留空
-- Build output directory：`/`
+- Build command：留空或 `exit 0`
+- Build output directory：`.`（仓库根目录）
+
+注意：Cloudflare Pages 单个静态文件大小上限为 25 MiB。本发布版已将原完整 GeoJSON 拆分为边界文件和紧凑面板数据文件，单个文件均低于该限制。
