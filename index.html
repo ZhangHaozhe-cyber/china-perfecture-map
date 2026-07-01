@@ -12,7 +12,7 @@
       --line: #d7dde5;
       --panel: rgba(255, 255, 255, 0.94);
       --accent: #2563eb;
-      --empty: #eeeeee;
+      --empty: #8f98a3;
     }
 
     * { box-sizing: border-box; }
@@ -324,7 +324,8 @@
   <script>
     const BOUNDARY_URL = 'data/prefecture_boundaries.geojson';
     const PANEL_URL = 'data/city_panel_compact.json';
-    const EMPTY_COLOR = '#eeeeee';
+    const EMPTY_COLOR = '#8f98a3';
+    const BOUNDARY_LINE_COLOR = '#374151';
     const COLOR_SCALE = ['#1f5aa6', '#5aa1d8', '#f2d06b', '#e98b39', '#b33f2f'];
     const SHORT_LABELS = {
       gdp_wanyuan: '地区生产总值',
@@ -390,6 +391,11 @@
       return city.values?.[yi]?.[mi] ?? null;
     }
 
+    function isLineFeature(feature) {
+      const type = feature.geometry?.type;
+      return type === 'LineString' || type === 'MultiLineString' || feature.properties?.feature_role === 'boundary_line';
+    }
+
     function formatNumber(value) {
       if (value === null || value === undefined || Number.isNaN(value)) return '暂无数据';
       return Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
@@ -424,10 +430,19 @@
     }
 
     function styleFeature(feature) {
+      if (isLineFeature(feature)) {
+        return {
+          color: BOUNDARY_LINE_COLOR,
+          weight: 1.6,
+          opacity: 0.95,
+          dashArray: '6 5',
+          fillOpacity: 0
+        };
+      }
       const value = metricValue(feature.properties);
       return {
         fillColor: colorFor(value),
-        fillOpacity: value === null || value === undefined ? 0.72 : 0.82,
+        fillOpacity: value === null || value === undefined ? 0.78 : 0.82,
         color: '#ffffff',
         weight: 0.75,
         opacity: 0.9
@@ -501,6 +516,7 @@
     }
 
     function bindFeature(feature, layer) {
+      if (isLineFeature(feature)) return;
       layer.on({
         mouseover: event => {
           const target = event.target;
@@ -605,7 +621,9 @@
         yearRange.max = years[years.length - 1];
         yearRange.value = currentYear;
         yearValue.textContent = currentYear;
-        datasetMeta.textContent = `${boundaryData.features.length} 个面要素 · ${allMetricKeys.length} 个变量 · ${years[0]}-${years[years.length - 1]}`;
+        const polygonCount = boundaryData.features.filter(feature => !isLineFeature(feature)).length;
+        const lineCount = boundaryData.features.length - polygonCount;
+        datasetMeta.textContent = `${polygonCount} 个面要素 · ${lineCount} 条边界线 · ${allMetricKeys.length} 个变量 · ${years[0]}-${years[years.length - 1]}`;
         renderMetricTabs();
         renderMetricSelect();
         computeBreaks();
