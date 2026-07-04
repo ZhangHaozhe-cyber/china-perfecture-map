@@ -157,7 +157,7 @@
       z-index: 850;
       top: 88px;
       right: 14px;
-      width: min(320px, calc(100vw - 28px));
+      width: min(380px, calc(100vw - 28px));
       max-height: calc(100vh - 160px);
       overflow: auto;
       padding: 14px;
@@ -190,6 +190,63 @@
 
     .stat-label { color: var(--muted); }
     .stat-value { font-weight: 700; text-align: right; }
+
+    .trend-panel {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid #edf0f4;
+    }
+
+    .trend-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: baseline;
+      margin-bottom: 8px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .trend-title span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .trend-unit {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 400;
+      white-space: nowrap;
+    }
+
+    .trend-chart {
+      width: 100%;
+      height: 150px;
+      display: block;
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid #e5eaf0;
+    }
+
+    .trend-note {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .trend-empty {
+      height: 150px;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid #e5eaf0;
+      font-size: 12px;
+    }
 
     .legend {
       position: absolute;
@@ -283,7 +340,7 @@
         right: 14px;
         bottom: 126px;
         width: auto;
-        max-height: 28vh;
+        max-height: 42vh;
       }
     }
   </style>
@@ -314,6 +371,7 @@
     <h2 class="panel-title">中国地级市</h2>
     <p class="panel-subtitle">2024 · 地区生产总值</p>
     <div id="detailStats"></div>
+    <div class="trend-panel" id="trendPanel"></div>
   </aside>
 
   <div class="legend" id="legend"></div>
@@ -357,6 +415,7 @@
     let metricIndex = {};
     let cityPanel = {};
     let yearIndex = {};
+    let availableYears = [];
     let defaultDetailMetrics = [];
     let breaks = [];
     let palette = [];
@@ -372,6 +431,7 @@
     const legend = document.getElementById('legend');
     const detailPanel = document.getElementById('detailPanel');
     const detailStats = document.getElementById('detailStats');
+    const trendPanel = document.getElementById('trendPanel');
     const datasetMeta = document.getElementById('datasetMeta');
 
     function metricLabel(metric) {
@@ -481,6 +541,70 @@
       return null;
     }
 
+    function trendSeries(properties, metric = currentMetric) {
+      return availableYears.map(year => {
+        const value = metricValue(properties, metric, year);
+        return {
+          year,
+          value: value !== null && value !== undefined && Number.isFinite(Number(value)) ? Number(value) : null
+        };
+      });
+    }
+
+    function renderTrend(properties) {
+      const unit = metricUnit(currentMetric);
+      const label = metricLabel(currentMetric);
+      const series = trendSeries(properties);
+      const valid = series.filter(item => item.value !== null);
+      if (valid.length < 2) {
+        trendPanel.innerHTML = `
+          <div class="trend-title"><span>${label}趋势</span>${unit ? `<em class="trend-unit">${unit}</em>` : ''}</div>
+          <div class="trend-empty">该城市该变量暂无足够年份数据</div>
+        `;
+        return;
+      }
+
+      const width = 320;
+      const height = 150;
+      const pad = { top: 12, right: 12, bottom: 28, left: 42 };
+      const plotWidth = width - pad.left - pad.right;
+      const plotHeight = height - pad.top - pad.bottom;
+      const minYear = availableYears[0];
+      const maxYear = availableYears[availableYears.length - 1];
+      const values = valid.map(item => item.value);
+      let minValue = Math.min(...values);
+      let maxValue = Math.max(...values);
+      if (minValue === maxValue) {
+        minValue -= Math.abs(minValue || 1) * 0.05;
+        maxValue += Math.abs(maxValue || 1) * 0.05;
+      }
+      const xFor = year => pad.left + ((year - minYear) / (maxYear - minYear || 1)) * plotWidth;
+      const yFor = value => pad.top + (1 - ((value - minValue) / (maxValue - minValue || 1))) * plotHeight;
+      const points = valid.map(item => `${xFor(item.year).toFixed(1)},${yFor(item.value).toFixed(1)}`).join(' ');
+      const current = valid.find(item => item.year === currentYear) || latestAvailable(properties, currentMetric);
+      const currentPoint = current ? { x: xFor(current.year), y: yFor(Number(current.value)), year: current.year, value: Number(current.value) } : null;
+      const xTicks = [minYear, Math.round((minYear + maxYear) / 2), maxYear];
+      const yTicks = [minValue, (minValue + maxValue) / 2, maxValue];
+      const currentText = currentPoint ? `${currentPoint.year}: ${formatNumber(currentPoint.value)}${unit}` : '暂无当前年份数据';
+
+      trendPanel.innerHTML = `
+        <div class="trend-title"><span>${label}趋势</span>${unit ? `<em class="trend-unit">${unit}</em>` : ''}</div>
+        <svg class="trend-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${label}时间趋势">
+          <g stroke="#e5eaf0" stroke-width="1">
+            ${yTicks.map(value => `<line x1="${pad.left}" y1="${yFor(value).toFixed(1)}" x2="${width - pad.right}" y2="${yFor(value).toFixed(1)}"></line>`).join('')}
+          </g>
+          <g fill="#667085" font-size="10">
+            ${yTicks.map(value => `<text x="${pad.left - 6}" y="${(yFor(value) + 3).toFixed(1)}" text-anchor="end">${formatNumber(value)}</text>`).join('')}
+            ${xTicks.map(year => `<text x="${xFor(year).toFixed(1)}" y="${height - 8}" text-anchor="middle">${year}</text>`).join('')}
+          </g>
+          <polyline fill="none" stroke="#2563eb" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" points="${points}"></polyline>
+          ${valid.map(item => `<circle cx="${xFor(item.year).toFixed(1)}" cy="${yFor(item.value).toFixed(1)}" r="2.5" fill="#2563eb"></circle>`).join('')}
+          ${currentPoint ? `<circle cx="${currentPoint.x.toFixed(1)}" cy="${currentPoint.y.toFixed(1)}" r="5" fill="#ffffff" stroke="#111827" stroke-width="2"></circle>` : ''}
+        </svg>
+        <div class="trend-note"><span>${minYear}-${maxYear}</span><span>${currentText}</span></div>
+      `;
+    }
+
     function renderDetails(properties) {
       currentDetailProps = properties;
       const title = properties.city_name || properties.name || '未命名地区';
@@ -502,6 +626,7 @@
       detailPanel.querySelector('.panel-title').textContent = title;
       detailPanel.querySelector('.panel-subtitle').textContent = subtitle;
       detailStats.innerHTML = rows;
+      renderTrend(properties);
     }
 
     function updateMap() {
@@ -609,6 +734,7 @@
       .then(([boundaryData, panelData]) => {
         geojsonData = boundaryData;
         const years = panelData.metadata.years || [2024];
+        availableYears = years;
         currentYear = years[years.length - 1];
         metricMeta = panelData.metadata.metrics || {};
         allMetricKeys = panelData.metadata.metric_keys || Object.keys(metricMeta).sort((a, b) => (metricMeta[a].order || 0) - (metricMeta[b].order || 0));
