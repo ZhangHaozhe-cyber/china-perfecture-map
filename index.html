@@ -355,6 +355,7 @@
     </div>
     <div class="search-group">
       <input class="control-input" id="metricSearch" type="search" placeholder="搜索变量">
+      <select class="control-select" id="metricCategory" aria-label="选择变量分类"></select>
       <select class="control-select" id="metricSelect" aria-label="选择变量"></select>
     </div>
     <div class="search-group">
@@ -412,6 +413,7 @@
     let currentYear = 2024;
     let metricMeta = {};
     let allMetricKeys = [];
+    let metricCategories = [];
     let metricIndex = {};
     let panelChunks = [];
     let metricLocation = {};
@@ -426,6 +428,7 @@
 
     const metricTabs = document.getElementById('metricTabs');
     const metricSearch = document.getElementById('metricSearch');
+    const metricCategory = document.getElementById('metricCategory');
     const metricSelect = document.getElementById('metricSelect');
     const citySearch = document.getElementById('citySearch');
     const yearRange = document.getElementById('yearRange');
@@ -702,21 +705,59 @@
       });
     }
 
+    function metricCategoryLabel(metric) {
+      const info = metricMeta[metric] || {};
+      const code = info.category_code || '';
+      const category = info.category || '未分类';
+      return code ? `${code} · ${category}` : category;
+    }
+
+    function renderMetricCategories() {
+      const labels = new Map();
+      allMetricKeys.forEach(metric => {
+        const label = metricCategoryLabel(metric);
+        if (!labels.has(label)) labels.set(label, 0);
+        labels.set(label, labels.get(label) + 1);
+      });
+      metricCategories = Array.from(labels.entries()).map(([label, count]) => ({ label, count }));
+      metricCategory.innerHTML = [
+        `<option value="">全部变量（${allMetricKeys.length}）</option>`,
+        ...metricCategories.map(item => `<option value="${item.label}">${item.label}（${item.count}）</option>`)
+      ].join('');
+    }
+
     function renderMetricSelect(filter = '') {
       const normalized = filter.trim().toLowerCase();
+      const selectedCategory = metricCategory.value;
       const keys = allMetricKeys.filter(metric => {
         const info = metricMeta[metric] || {};
-        const text = `${metric} ${info.label || ''} ${info.unit || ''}`.toLowerCase();
-        return !normalized || text.includes(normalized);
-      }).slice(0, 80);
+        const categoryLabel = metricCategoryLabel(metric);
+        const text = [
+          metric,
+          info.label || '',
+          info.original_column || '',
+          info.category || '',
+          info.category_code || '',
+          info.source || '',
+          info.source_group || '',
+          info.coverage || ''
+        ].join(' ').toLowerCase();
+        const categoryMatched = !selectedCategory || categoryLabel === selectedCategory;
+        const searchMatched = !normalized || text.includes(normalized);
+        return categoryMatched && searchMatched;
+      });
       metricSelect.innerHTML = keys.map(metric => {
         const unit = metricUnit(metric);
-        return `<option value="${metric}">${metricLabel(metric)}${unit ? `（${unit}）` : ''}</option>`;
+        const info = metricMeta[metric] || {};
+        const category = info.category_code || info.category || '';
+        return `<option value="${metric}">${metricLabel(metric)}${category ? ` · ${category}` : ''}${unit ? `（${unit}）` : ''}</option>`;
       }).join('');
       if (keys.includes(currentMetric)) {
         metricSelect.value = currentMetric;
       } else if (keys.length) {
         metricSelect.value = keys[0];
+      } else {
+        metricSelect.innerHTML = '<option value="">没有匹配变量</option>';
       }
     }
 
@@ -781,6 +822,7 @@
         const lineCount = boundaryData.features.length - polygonCount;
         datasetMeta.textContent = `${polygonCount} 个面要素 · ${lineCount} 条边界线 · ${allMetricKeys.length} 个变量 · ${years[0]}-${years[years.length - 1]}`;
         renderMetricTabs();
+        renderMetricCategories();
         renderMetricSelect();
         computeBreaks();
         boundaryLayer = L.geoJSON(boundaryData, { style: styleFeature, onEachFeature: bindFeature }).addTo(map);
@@ -801,6 +843,10 @@
     });
 
     metricSearch.addEventListener('input', event => renderMetricSelect(event.target.value));
+    metricCategory.addEventListener('change', () => {
+      renderMetricSelect(metricSearch.value);
+      if (metricSelect.value && metricSelect.value !== currentMetric) setMetric(metricSelect.value);
+    });
     metricSelect.addEventListener('change', event => setMetric(event.target.value));
     citySearch.addEventListener('change', event => focusCity(event.target.value));
     citySearch.addEventListener('keydown', event => {
